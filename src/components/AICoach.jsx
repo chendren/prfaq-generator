@@ -1,14 +1,13 @@
 import { useState, useRef, useEffect } from "react";
-import { callClaude, buildCoachSystem } from "../lib/claude";
+import { callClaude, buildCoachSystem, KeyRequiredError } from "../lib/claude";
 import { QUICK_PROMPTS } from "../lib/constants";
 
 export default function AICoach({ data, stepId }) {
   const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [input, setInput]       = useState("");
+  const [loading, setLoading]   = useState(false);
   const endRef = useRef(null);
 
-  // Reset messages when step changes, set welcome message
   useEffect(() => {
     const welcomes = {
       headline:  "I am here to help sharpen your headline. A great PRFAQ headline announces the customer benefit like a real news story — specific, compelling, and free of jargon. Share what you are thinking.",
@@ -18,7 +17,7 @@ export default function AICoach({ data, stepId }) {
       quotes:    "Quotes bring the PRFAQ to life. The executive quote should articulate the vision. The customer quote should feel like something a real person would actually say — emotional, specific, human.",
       faqs:      "FAQs are where skeptics get answered. Customer FAQs cover how this affects them. Internal FAQs address whether you can build it and whether it makes financial sense. Do not avoid the hard questions.",
       review:    "You have drafted all the sections. Ask me anything — I can critique it, identify what is missing, or help strengthen any section before you finalize.",
-      output:    "Your Working Backwards framework has been generated. Use the chat below to ask me to expand any section, explain the reasoning, or explore implications for your team.",
+      output:    "Your Working Backwards framework has been generated. Ask me to expand any section, explain the reasoning, or explore implications for your team.",
     };
     setMessages(welcomes[stepId] ? [{ role: "ai", text: welcomes[stepId] }] : []);
     setInput("");
@@ -43,7 +42,11 @@ export default function AICoach({ data, stepId }) {
       const reply = await callClaude(history, buildCoachSystem(data, stepId));
       setMessages((m) => [...m, { role: "ai", text: reply }]);
     } catch (e) {
-      setMessages((m) => [...m, { role: "ai", text: `⚠ ${e.message}` }]);
+      if (e instanceof KeyRequiredError) {
+        setMessages((m) => [...m, { role: "ai", text: "⚠ No API key found. Please add your key using the header button." }]);
+      } else {
+        setMessages((m) => [...m, { role: "ai", text: `⚠ ${e.message}` }]);
+      }
     }
     setLoading(false);
   };

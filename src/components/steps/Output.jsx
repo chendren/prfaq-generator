@@ -1,34 +1,43 @@
-import { useState, useEffect } from "react";
-import { callClaude, buildWBPrompt, buildPRFAQText, parseWBSections } from "../../lib/claude";
+import { useState, useEffect, useCallback } from "react";
+import { callClaude, buildWBPrompt, buildPRFAQText, parseWBSections, KeyRequiredError } from "../../lib/claude";
 import { WB_ICONS } from "../../lib/constants";
 
 export default function Output({ data, onReset }) {
-  const [output, setOutput] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [output, setOutput]     = useState(null);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState(null);
+  const [keyError, setKeyError] = useState(false);
 
-  useEffect(() => {
-    generate();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const generate = async () => {
+  const generate = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setKeyError(false);
     setOutput(null);
     try {
-      const prompt = buildWBPrompt(data);
       const reply = await callClaude(
-        [{ role: "user", content: prompt }],
+        [{ role: "user", content: buildWBPrompt(data) }],
         "You are a senior AWS Solutions Architect and Amazon Working Backwards expert. Be specific, practical, and grounded. Use ## headers exactly as instructed.",
         2000
       );
       setOutput(reply);
     } catch (e) {
-      setError(e.message);
+      if (e instanceof KeyRequiredError) {
+        setKeyError(true);
+      } else {
+        setError(e.message);
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
+  // data is stable on mount — generate runs once when Output mounts
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Run once on mount
+  useEffect(() => {
+    generate();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const copyPRFAQ = () => navigator.clipboard.writeText(buildPRFAQText(data)).catch(() => {});
   const copyWB    = () => output && navigator.clipboard.writeText(output).catch(() => {});
@@ -60,10 +69,21 @@ export default function Output({ data, onReset }) {
           </div>
         )}
 
-        {error && (
+        {keyError && !loading && (
+          <div className="wb-error">
+            <strong>API key required.</strong> Please add your Anthropic key using the header button, then retry.
+            <div style={{ marginTop: "1rem" }}>
+              <button className="btn-outline" onClick={generate}>Retry</button>
+            </div>
+          </div>
+        )}
+
+        {error && !keyError && !loading && (
           <div className="wb-error">
             <strong>Generation failed:</strong> {error}
-            <button className="btn-outline" style={{ marginTop: "1rem" }} onClick={generate}>Retry</button>
+            <div style={{ marginTop: "1rem" }}>
+              <button className="btn-outline" onClick={generate}>Retry</button>
+            </div>
           </div>
         )}
 

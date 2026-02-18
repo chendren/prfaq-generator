@@ -1,4 +1,4 @@
-export default function Header({ projectName, currentStep, totalSteps }) {
+export default function Header({ projectName, currentStep, totalSteps, keyReady, onClearKey }) {
   return (
     <header className="app-header">
       <div className="header-brand">
@@ -7,10 +7,19 @@ export default function Header({ projectName, currentStep, totalSteps }) {
       </div>
       <div className="header-right">
         {projectName && <span className="header-project">{projectName}</span>}
-        {currentStep > 0 && (
-          <span className="header-progress">
-            Step {currentStep} of {totalSteps - 2}
-          </span>
+        {currentStep > 0 && currentStep < totalSteps - 1 && (
+          <span className="header-progress">Step {currentStep} of {totalSteps - 2}</span>
+        )}
+        {keyReady ? (
+          <button
+            className="key-status key-status-ok"
+            onClick={onClearKey}
+            title="API key active — click to change"
+          >
+            🔑 Key active
+          </button>
+        ) : (
+          <span className="key-status key-status-missing">⚠ No key</span>
         )}
       </div>
     </header>

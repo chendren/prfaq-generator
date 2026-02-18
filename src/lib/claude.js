@@ -1,29 +1,58 @@
 /**
- * Claude API helper
- * Set VITE_ANTHROPIC_API_KEY in .env.local for local dev
+ * Claude API helper — all calls go through /api/chat (Vercel proxy).
+ * The proxy uses the server-side ANTHROPIC_API_KEY env var if set,
+ * or falls back to the user's own key passed as x-user-api-key.
+ * No API key is ever bundled into client code.
  */
-export async function callClaude(messages, systemPrompt, maxTokens = 1800) {
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
-  const headers = { "Content-Type": "application/json" };
-  if (apiKey) headers["x-api-key"] = apiKey;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+const PROXY = "/api/chat";
+
+export async function callClaude(messages, systemPrompt, maxTokens = 1800) {
+  const userKey = sessionStorage.getItem("userApiKey") || "";
+
+  const headers = { "Content-Type": "application/json" };
+  if (userKey) headers["x-user-api-key"] = userKey;
+
+  const res = await fetch(PROXY, {
     method: "POST",
     headers,
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages,
-    }),
+    body: JSON.stringify({ messages, system: systemPrompt, max_tokens: maxTokens }),
   });
 
-  if (!res.ok) {
-    const txt = await res.text().catch(() => res.statusText);
-    throw new Error(`API ${res.status}: ${txt}`);
-  }
   const data = await res.json();
+
+  if (!res.ok) {
+    // Proxy returns { error, code }
+    if (data.code === "NO_KEY") throw new KeyRequiredError();
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+
   return data.content?.map((b) => b.text || "").join("") ?? "";
+}
+
+/** Thrown when no key is available on server or client */
+export class KeyRequiredError extends Error {
+  constructor() {
+    super("API key required");
+    this.name = "KeyRequiredError";
+  }
+}
+
+/** Store user's key for this session only */
+export function saveUserKey(key) {
+  if (key && key.trim()) {
+    sessionStorage.setItem("userApiKey", key.trim());
+  }
+}
+
+/** Clear user's key */
+export function clearUserKey() {
+  sessionStorage.removeItem("userApiKey");
+}
+
+/** Check if a user key is stored in this session */
+export function hasUserKey() {
+  return !!sessionStorage.getItem("userApiKey");
 }
 
 export function buildCoachSystem(data, stepId) {
@@ -86,8 +115,8 @@ export function buildPRFAQText(data) {
     "FOR IMMEDIATE RELEASE",
     "",
     data.headline,
-    data.subheadline && `\n${data.subheadline}`,
-    data.dateline && `\n${data.dateline}`,
+    data.subheadline ? `\n${data.subheadline}` : null,
+    data.dateline    ? `\n${data.dateline}` : null,
     "",
     "THE PROBLEM",
     data.problem,
@@ -110,7 +139,7 @@ export function buildPRFAQText(data) {
     "INTERNAL FAQs",
     iFaqs || "(none)",
   ]
-    .filter((l) => l !== false && l !== undefined)
+    .filter((l) => l !== null && l !== undefined)
     .join("\n")
     .trim();
 }
@@ -124,7 +153,7 @@ export function parseWBSections(text) {
     positions.push({ title: m[1].trim(), end: m.index, contentStart: m.index + m[0].length });
   }
   return positions.map((pos, i) => ({
-    title: pos.title,
+    title:   pos.title,
     content: text.slice(pos.contentStart, i < positions.length - 1 ? positions[i + 1].end : text.length).trim(),
   }));
 }
